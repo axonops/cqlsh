@@ -149,7 +149,7 @@ jobs:
           fi
           VERSION=$(echo $GITHUB_REF_NAME | sed 's/^v//g')
 
-          for t in rpm deb; do
+          for t in deb; do
             fpm -s dir -t $t -n cqlsh -v ${VERSION} -a $ARCH --maintainer "AxonOps Limited <support@axonops.com>" -d "" -m "" --description "CQL Shell for interacting with Apache Cassandra" --prefix /usr/local dist/cqlsh-Linux-$(uname -m)=/bin/cqlsh
           done
 
