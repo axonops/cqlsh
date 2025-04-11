@@ -4,8 +4,6 @@ on:
   push:
     tags:
       - 'v*.*.*'
-    branches:
-      - ci-cd
 
 defaults:
   run:
@@ -123,9 +121,8 @@ jobs:
           mkdir -p dist onefile
 
           if [[ "$(uname -s)" =~ "Linux" ]]; then
-            mkdir -p dist/cqlsh-$(uname -s)-$(uname -m)
             pyinstaller --noconfirm --clean --noupx --onefile cqlsh.py -n cqlsh-dyn-$(uname -s)-$(uname -m)
-            staticx dist/cqlsh-dyn-$(uname -s)-$(uname -m) dist/cqlsh-$(uname -s)-$(uname -m)/cqlsh-$(uname -s)-$(uname -m)
+            staticx dist/cqlsh-dyn-$(uname -s)-$(uname -m) dist/cqlsh-$(uname -s)-$(uname -m)
           elif [[ "$(uname -s)" =~ "Darwin" ]]; then
             pyinstaller --noconfirm --clean --noupx cqlsh.py --codesign-identity ${{ secrets.APPLE_IDENTITY }} --osx-entitlements-file resources/entitlements.plist -n cqlsh-$(uname -s)-$(uname -m)
             pyinstaller --noconfirm --clean --noupx cqlsh.py --codesign-identity ${{ secrets.APPLE_IDENTITY }} --osx-entitlements-file resources/entitlements.plist --distpath onefile --onefile -n cqlsh-onefile-$(uname -s)-$(uname -m)
@@ -137,6 +134,24 @@ jobs:
           echo "WINDOWS_EXE=$(ls -1 dist/cqlsh*/*.exe)" >> $GITHUB_ENV
         env:
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+
+      - name: Create debian and redhat packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install ruby-dev build-essential rpm -y && sudo gem i fpm -f
+          if [[ "$(uname -m)" =~ "x86_64" ]]; then
+            ARCH="x86_64"
+          elif [[ "$(uname -m)" =~ "aarch64" ]]; then
+            ARCH="arm64"
+          else
+            echo "Unsupported architecture: $(uname -m)"
+            exit 1
+          fi
+          VERSION=$(echo $GITHUB_REF_NAME | sed 's/^v//g')
+
+          for t in rpm deb; do
+            fpm -s dir -t $t -n cqlsh -v ${VERSION} -a $ARCH --maintainer "AxonOps Limited <support@axonops.com>" -d "" -m "" --description "CQL Shell for interacting with Apache Cassandra" --prefix /usr/local dist/cqlsh-Linux-$(uname -m)=/bin/cqlsh
+          done
 
       # - name: Azure login
       #   if: runner.os == 'Windows'
@@ -185,6 +200,8 @@ jobs:
           path: |
             dist/cqlsh*.tar
             onefile/cqlsh-onefile*
+            dist/*.rpm
+            dist/*.deb
 
       - name: Clean up keychain and provisioning profile
         if: ${{ always() }}
