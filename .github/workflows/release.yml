@@ -149,8 +149,16 @@ jobs:
           fi
           VERSION=$(echo $GITHUB_REF_NAME | sed 's/^v//g')
 
-          for t in deb; do
-            fpm -s dir -t $t -n cqlsh -v ${VERSION} -a $ARCH --maintainer "AxonOps Limited <support@axonops.com>" -d "" -m "" --description "CQL Shell for interacting with Apache Cassandra" --prefix /usr/local dist/cqlsh-Linux-$(uname -m)=/bin/cqlsh
+          fpm -s dir -t deb -n cqlsh -v ${VERSION} -a $ARCH \
+            --maintainer "AxonOps Limited <support@axonops.com>" \
+            --description "CQL Shell for interacting with Apache Cassandra" \
+            --prefix /usr/local dist/cqlsh-Linux-$(uname -m)=/bin/cqlsh
+
+          for t in rpm apk; do
+            fpm -s dir -t $t -n cqlsh -v ${VERSION} -a $ARCH \
+              --maintainer "AxonOps Limited <support@axonops.com>" \
+              --description "CQL Shell for interacting with Apache Cassandra" \
+              --prefix /usr/local dist/cqlsh-Linux-$(uname -m)=/bin/cqlsh
           done
 
       # - name: Azure login
@@ -200,8 +208,9 @@ jobs:
           path: |
             dist/cqlsh*.tar
             onefile/cqlsh-onefile*
-            dist/*.rpm
-            dist/*.deb
+            *.rpm
+            *.deb
+            *.apk
 
       - name: Clean up keychain and provisioning profile
         if: ${{ always() }}
