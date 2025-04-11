@@ -21,6 +21,7 @@ import pstats
 import os
 import errno
 import stat
+import sys
 
 from datetime import timedelta, tzinfo
 from io import StringIO
@@ -115,6 +116,8 @@ def trim_if_present(s, prefix):
 
 
 def is_file_secure(filename):
+    if sys.platform == 'win32' or sys.platform.startswith('win'):
+        return True
     try:
         st = os.stat(filename)
     except OSError as e:

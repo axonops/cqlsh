@@ -1,0 +1,194 @@
+name: Compile
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+    branches:
+      - ci-cd
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Create release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.ref_name }}
+        run: |
+          if [[ "$GITHUB_REF_NAME" != "main" && "$GITHUB_REF_NAME" != "master" ]]; then
+            exit 0
+          fi
+          OPTIONS=""
+          if [[ $GITHUB_REF_NAME == *"internal"* ]]; then
+            OPTIONS="--prerelease"
+          fi
+          gh release create "$GITHUB_REF_NAME" \
+              --repo="$GITHUB_REPOSITORY" \
+              --title="Release for ${GITHUB_REF_NAME}" \
+              --generate-notes $OPTIONS
+  build:
+    name: Build on ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    needs: [release]
+    strategy:
+      matrix:
+        include:
+          # M1
+          - os: macos-14
+            target: Macos
+
+          # X86
+          - os: macos-13
+            target: Macos
+
+          - os: windows-latest
+            target: Windows
+
+          - os: ubuntu-24.04-arm
+            target: Linux
+
+          - os: ubuntu-latest
+            target: Linux
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python v3.12
+        uses: actions/setup-python@v5
+        if: ${{ matrix.target != 'Linux' }}
+        with:
+          python-version: 3.12
+
+      - name: Decode and import Apple certificate
+        if: ${{ runner.os == 'macOS' }}
+        run: |
+          if [[ "$(uname -s)" =~ "Darwin" ]]; then
+            # create variables
+            CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+            KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+
+            # import certificate and provisioning profile from secrets
+            echo -n "${{ secrets.APPLE_CERTIFICATE_BASE64 }}" | base64 --decode -o $CERTIFICATE_PATH
+
+            # create temporary keychain
+            security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+            security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+            security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+            # import certificate to keychain
+            security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+            security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+            security list-keychain -d user -s $KEYCHAIN_PATH
+          fi
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+
+      # statix won't install in Windows nor we need it
+      - name: Install dependencies
+        run: |
+          if [[ "$(uname -s)" =~ "Linux" ]]; then
+            sudo apt-get update
+            sudo apt-get -y install patchelf scons
+            pip3 install staticx==0.14.1
+          fi
+          if [ -x /home/github/py312/bin/pip3 ]; then
+            source /home/github/py312/bin/activate
+            pip3 install wheel setuptools
+            pip3 install staticx==0.14.1
+          else
+            pip3 install wheel setuptools
+          fi
+
+          pip3 install -r requirements.txt
+
+      - name: Build binaries for cqlsh
+        run: |
+          set -x
+          if [ -x /home/github/py312/bin/pip3 ]; then
+            source /home/github/py312/bin/activate
+          fi
+
+          mkdir -p dist onefile
+
+          if [[ "$(uname -s)" =~ "Linux" ]]; then
+            mkdir -p dist/cqlsh-$(uname -s)-$(uname -m)
+            pyinstaller --noconfirm --clean --noupx --onefile cqlsh.py -n cqlsh-dyn-$(uname -s)-$(uname -m)
+            staticx dist/cqlsh-dyn-$(uname -s)-$(uname -m) dist/cqlsh-$(uname -s)-$(uname -m)/cqlsh-$(uname -s)-$(uname -m)
+          elif [[ "$(uname -s)" =~ "Darwin" ]]; then
+            pyinstaller --noconfirm --clean --noupx cqlsh.py --codesign-identity ${{ secrets.APPLE_IDENTITY }} --osx-entitlements-file resources/entitlements.plist -n cqlsh-$(uname -s)-$(uname -m)
+            pyinstaller --noconfirm --clean --noupx cqlsh.py --codesign-identity ${{ secrets.APPLE_IDENTITY }} --osx-entitlements-file resources/entitlements.plist --distpath onefile --onefile -n cqlsh-onefile-$(uname -s)-$(uname -m)
+          else
+            pyinstaller --noconfirm --clean --noupx cqlsh.py -n cqlsh-$(uname -s)-$(uname -m)
+            pyinstaller --noconfirm --clean --noupx cqlsh.py --distpath onefile --onefile -n cqlsh-onefile-$(uname -s)-$(uname -m)
+          fi
+          rm -rf dist/*-dyn-*
+          echo "WINDOWS_EXE=$(ls -1 dist/cqlsh*/*.exe)" >> $GITHUB_ENV
+        env:
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+
+      # - name: Azure login
+      #   if: runner.os == 'Windows'
+      #   uses: azure/login@v2
+      #   with:
+      #     creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # - name: Install AzureSignTool
+      #   if: runner.os == 'Windows'
+      #   run: dotnet tool install --no-cache --global AzureSignTool --version 4.0.1
+
+      # - name: Azure token to use with AzureSignTool
+      #   if: runner.os == 'Windows'
+      #   shell: pwsh
+      #   run: |
+      #     $az_token=$(az account get-access-token --scope https://vault.azure.net/.default --query accessToken --output tsv)
+      #     echo "::add-mask::$az_token"
+      #     echo "AZ_TOKEN=$az_token" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      # - name: Build signed installer
+      #   if: runner.os == 'Windows'
+      #   run: |
+      #     azuresigntool.exe sign --verbose -kvu ${{ secrets.AZURE_KEY_VAULT_URI }} -kvc ${{ secrets.AZURE_KEYVAULT_CERT_NAME }} -kva %AZ_TOKEN% -fd sha256 -tr http://timestamp.digicert.com -v "%WINDOWS_EXE%"
+      #   shell: cmd
+      
+      - name: Packages
+        run: |
+          for target in cqlsh-$(uname -s)-$(uname -m); do
+            (cd dist && tar cpf $(basename $target).tar $target)
+          done
+
+      - name: Upload artifacts
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/cqlsh*tar
+            onefile/cqlsh-onefile*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/upload-artifact@v4
+        if: github.ref_type != 'tag'
+        with:
+          name: cqlsh-${{ matrix.target }}-${{ matrix.os }}
+          path: |
+            dist/cqlsh*.tar
+            onefile/cqlsh-onefile*
+
+      - name: Clean up keychain and provisioning profile
+        if: ${{ always() }}
+        run: |
+          if [[ "$(uname -s)" =~ "Darwin" ]]; then
+            security delete-keychain $RUNNER_TEMP/app-signing.keychain-db
+          fi
