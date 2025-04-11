@@ -140,25 +140,27 @@ jobs:
         run: |
           sudo apt-get install ruby-dev build-essential rpm -y && sudo gem i fpm -f
           if [[ "$(uname -m)" =~ "x86_64" ]]; then
-            ARCH="x86_64"
+            DEB_ARCH="x86_64"
           elif [[ "$(uname -m)" =~ "aarch64" ]]; then
-            ARCH="arm64"
+            DEB_ARCH="arm64"
           else
             echo "Unsupported architecture: $(uname -m)"
             exit 1
           fi
           VERSION=$(echo $GITHUB_REF_NAME | sed 's/^v//g')
 
-          fpm -s dir -t deb -n cqlsh -v ${VERSION} -a $ARCH \
+          fpm -s dir -t deb -n cqlsh -v ${VERSION} -a $DEB_ARCH \
             --maintainer "AxonOps Limited <support@axonops.com>" \
             --description "CQL Shell for interacting with Apache Cassandra" \
-            --prefix /usr/local dist/cqlsh-Linux-$(uname -m)=/bin/cqlsh
+            --prefix /usr/local \
+            dist/cqlsh-Linux-$(uname -m)=/bin/cqlsh
 
           for t in rpm apk; do
-            fpm -s dir -t $t -n cqlsh -v ${VERSION} -a $ARCH \
+            fpm -s dir -t $t -n cqlsh -v ${VERSION} -a $(uname -m) \
               --maintainer "AxonOps Limited <support@axonops.com>" \
               --description "CQL Shell for interacting with Apache Cassandra" \
-              --prefix /usr/local dist/cqlsh-Linux-$(uname -m)=/bin/cqlsh
+              --prefix /usr/local \
+              dist/cqlsh-Linux-$(uname -m)=/bin/cqlsh
           done
 
       # - name: Azure login
@@ -198,6 +200,9 @@ jobs:
           files: |
             dist/cqlsh*tar
             onefile/cqlsh-onefile*
+            *.rpm
+            *.deb
+            *.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
