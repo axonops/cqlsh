@@ -150,7 +150,7 @@ jobs:
           fi
           VERSION=$(echo $GITHUB_REF_NAME | sed 's/^v//g')
 
-          fpm -s dir -t deb -n cqlsh -v ${VERSION} -a $DEB_ARCH \
+          fpm -s dir -t deb -n axonops-cqlsh -v ${VERSION} -a $DEB_ARCH \
             --maintainer "AxonOps Limited <support@axonops.com>" \
             --description "CQL Shell for interacting with Apache Cassandra" \
             --deb-use-file-permissions \
@@ -158,7 +158,7 @@ jobs:
             dist/cqlsh-Linux-$(uname -m)=/bin/cqlsh
 
           for t in rpm apk; do
-            fpm -s dir -t $t -n cqlsh -v ${VERSION} -a $(uname -m) \
+            fpm -s dir -t $t -n axonops-cqlsh -v ${VERSION} -a $(uname -m) \
               --maintainer "AxonOps Limited <support@axonops.com>" \
               --description "CQL Shell for interacting with Apache Cassandra" \
               --deb-use-file-permissions \
