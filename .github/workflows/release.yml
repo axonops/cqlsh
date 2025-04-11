@@ -131,6 +131,7 @@ jobs:
             pyinstaller --noconfirm --clean --noupx cqlsh.py --distpath onefile --onefile -n cqlsh-onefile-$(uname -s)-$(uname -m)
           fi
           rm -rf dist/*-dyn-*
+          chmod 755 dist/cqlsh*
           echo "WINDOWS_EXE=$(ls -1 dist/cqlsh*/*.exe)" >> $GITHUB_ENV
         env:
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
@@ -152,6 +153,7 @@ jobs:
           fpm -s dir -t deb -n cqlsh -v ${VERSION} -a $DEB_ARCH \
             --maintainer "AxonOps Limited <support@axonops.com>" \
             --description "CQL Shell for interacting with Apache Cassandra" \
+            --deb-use-file-permissions \
             --prefix /usr/local \
             dist/cqlsh-Linux-$(uname -m)=/bin/cqlsh
 
@@ -159,6 +161,7 @@ jobs:
             fpm -s dir -t $t -n cqlsh -v ${VERSION} -a $(uname -m) \
               --maintainer "AxonOps Limited <support@axonops.com>" \
               --description "CQL Shell for interacting with Apache Cassandra" \
+              --deb-use-file-permissions \
               --prefix /usr/local \
               dist/cqlsh-Linux-$(uname -m)=/bin/cqlsh
           done
